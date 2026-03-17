@@ -338,7 +338,7 @@ func (r *runtimeService) CreatePodSandbox(systemContext *types.SystemContext, po
 			sourceCtx.AuthFilePath = imageAuthFile
 		}
 
-		pulledRef, err := r.storageImageServer.PullImage(context.Background(), pauseImage, &ImageCopyOptions{
+		pullResult, err := r.storageImageServer.PullImage(context.Background(), pauseImage, &ImageCopyOptions{
 			SourceCtx:      &sourceCtx,
 			DestinationCtx: systemContext,
 		})
@@ -346,7 +346,7 @@ func (r *runtimeService) CreatePodSandbox(systemContext *types.SystemContext, po
 			return ContainerInfo{}, err
 		}
 
-		ref, err := istorage.Transport.NewStoreReference(r.storageImageServer.GetStore(), pulledRef.Raw(), "")
+		ref, err := istorage.Transport.NewStoreReference(r.storageImageServer.GetStore(), pullResult.ImageRef.Raw(), "")
 		if err != nil {
 			return ContainerInfo{}, err
 		}

@@ -52,6 +52,12 @@ const (
 	// ImagePullsSuccessTotal is the key for successful image downloads in CRI-O.
 	ImagePullsSuccessTotal Collector = crioPrefix + "image_pulls_success_total"
 
+	// ImagePullsSuccessByRegistryTotal counts successful pulls labeled by resolved registry.
+	ImagePullsSuccessByRegistryTotal Collector = crioPrefix + "image_pulls_success_by_registry_total"
+
+	// ImagePullsFailureByRegistryTotal counts failed pulls labeled by resolved registry and error.
+	ImagePullsFailureByRegistryTotal Collector = crioPrefix + "image_pulls_failure_by_registry_total"
+
 	// ImageLayerReuseTotal is the key for the CRI-O image layer reuse metrics.
 	ImageLayerReuseTotal Collector = crioPrefix + "image_layer_reuse_total"
 
@@ -102,6 +108,8 @@ func All() Collectors {
 		ImagePullsSkippedBytesTotal.Stripped(),
 		ImagePullsFailureTotal.Stripped(),
 		ImagePullsSuccessTotal.Stripped(),
+		ImagePullsSuccessByRegistryTotal.Stripped(),
+		ImagePullsFailureByRegistryTotal.Stripped(),
 		ImageLayerReuseTotal.Stripped(),
 		ContainersOOMCountTotal.Stripped(),
 		ContainersSeccompNotifierCountTotal.Stripped(),

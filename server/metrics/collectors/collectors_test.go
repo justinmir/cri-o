@@ -67,6 +67,14 @@ var _ = t.Describe("Collectors", func() {
 		})
 	})
 
+	t.Describe("All", func() {
+		It("should contain the registry-labeled collectors", func() {
+			all := collectors.All()
+			Expect(all.Contains(collectors.ImagePullsSuccessByRegistryTotal)).To(BeTrue())
+			Expect(all.Contains(collectors.ImagePullsFailureByRegistryTotal)).To(BeTrue())
+		})
+	})
+
 	t.Describe("ToSlice", func() {
 		It("should convert to slice", func() {
 			// Given

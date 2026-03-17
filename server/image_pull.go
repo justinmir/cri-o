@@ -191,10 +191,9 @@ func (s *Server) pullImage(ctx context.Context, pullArgs *pullArguments) (string
 	lastErr := errors.New("internal error: pullImage failed but reported no error reason")
 
 	for _, remoteCandidateName := range remoteCandidates {
-		imageRef, err := s.pullImageCandidate(ctx, &sourceCtx, remoteCandidateName, decryptConfig, cgroup)
+		imageRef, resolvedRegistry, err := s.pullImageCandidate(ctx, &sourceCtx, remoteCandidateName, decryptConfig, cgroup)
 		if err == nil {
-			// Update metric for successful image pulls
-			metrics.Instance().MetricImagePullsSuccessesInc(remoteCandidateName)
+			metrics.Instance().MetricImagePullsSuccessesInc(remoteCandidateName, resolvedRegistry)
 
 			return s.resolveImageRefToID(ctx, imageRef)
 		}
@@ -297,7 +296,7 @@ func (s *Server) prepareTempAuthFile(ctx context.Context, sysCtx *imageTypes.Sys
 	return cleanup, nil
 }
 
-func (s *Server) pullImageCandidate(ctx context.Context, sourceCtx *imageTypes.SystemContext, remoteCandidateName storage.RegistryImageReference, decryptConfig *encconfig.DecryptConfig, cgroup string) (storage.RegistryImageReference, error) {
+func (s *Server) pullImageCandidate(ctx context.Context, sourceCtx *imageTypes.SystemContext, remoteCandidateName storage.RegistryImageReference, decryptConfig *encconfig.DecryptConfig, cgroup string) (storage.RegistryImageReference, string, error) {
 	// Collect pull progress metrics
 	progress := make(chan imageTypes.ProgressProperties)
 	defer close(progress)
@@ -310,7 +309,7 @@ func (s *Server) pullImageCandidate(ctx context.Context, sourceCtx *imageTypes.S
 	pullCtx, cancel := context.WithCancel(ctx)
 	go consumeImagePullProgress(ctx, cancel, s.ContainerServer.Config().PullProgressTimeout, progress, remoteCandidateName)
 
-	repoDigest, err := s.ContainerServer.StorageImageServer().PullImage(pullCtx, remoteCandidateName, &storage.ImageCopyOptions{
+	copyOpts := &storage.ImageCopyOptions{
 		SourceCtx:        sourceCtx,
 		DestinationCtx:   s.config.SystemContext,
 		OciDecryptConfig: decryptConfig,
@@ -320,15 +319,17 @@ func (s *Server) pullImageCandidate(ctx context.Context, sourceCtx *imageTypes.S
 			UseNewCgroup: s.config.SeparatePullCgroup != "",
 			ParentCgroup: cgroup,
 		},
-	})
-	if err != nil {
-		log.Debugf(ctx, "Error pulling image %s: %v", remoteCandidateName, err)
-		tryIncrementImagePullFailureMetric(remoteCandidateName, err)
-
-		return storage.RegistryImageReference{}, err
 	}
 
-	return repoDigest, nil
+	result, err := s.ContainerServer.StorageImageServer().PullImage(pullCtx, remoteCandidateName, copyOpts)
+	if err != nil {
+		log.Debugf(ctx, "Error pulling image %s: %v", remoteCandidateName, err)
+		tryIncrementImagePullFailureMetric(remoteCandidateName, err, result.ResolvedRegistry)
+
+		return storage.RegistryImageReference{}, "", err
+	}
+
+	return result.ImageRef, result.ResolvedRegistry, nil
 }
 
 // resolveImageRefToID converts a pulled image reference (repo@digest) to a
@@ -400,7 +401,7 @@ func consumeImagePullProgress(ctx context.Context, cancel context.CancelFunc, pu
 	}
 }
 
-func tryIncrementImagePullFailureMetric(img storage.RegistryImageReference, err error) {
+func tryIncrementImagePullFailureMetric(img storage.RegistryImageReference, err error, resolvedRegistry string) {
 	// We try to cover some basic use-cases
 	const labelUnknown = "UNKNOWN"
 
@@ -426,7 +427,7 @@ func tryIncrementImagePullFailureMetric(img storage.RegistryImageReference, err 
 	}
 
 	// Update metric for failed image pulls
-	metrics.Instance().MetricImagePullsFailuresInc(img, label)
+	metrics.Instance().MetricImagePullsFailuresInc(img, label, resolvedRegistry)
 }
 
 func tryRecordSkippedMetric(ctx context.Context, name storage.RegistryImageReference, someBlobDigest digest.Digest) {

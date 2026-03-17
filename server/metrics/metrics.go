@@ -78,6 +78,8 @@ type Metrics struct {
 	metricImagePullsSkippedBytesTotal         *prometheus.CounterVec
 	metricImagePullsFailureTotal              *prometheus.CounterVec
 	metricImagePullsSuccessTotal              prometheus.Counter
+	metricImagePullsSuccessByRegistryTotal    *prometheus.CounterVec
+	metricImagePullsFailureByRegistryTotal    *prometheus.CounterVec
 	metricImageLayerReuseTotal                *prometheus.CounterVec
 	metricContainersOOMCountTotal             *prometheus.CounterVec
 	metricContainersSeccompNotifierCountTotal *prometheus.CounterVec
@@ -206,6 +208,22 @@ func New(config *libconfig.MetricsConfig, apiConfig *libconfig.APIConfig) *Metri
 				Name:      collectors.ImagePullsSuccessTotal.String(),
 				Help:      "Cumulative number of CRI-O image pull successes.",
 			},
+		),
+		metricImagePullsSuccessByRegistryTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Subsystem: collectors.Subsystem,
+				Name:      collectors.ImagePullsSuccessByRegistryTotal.String(),
+				Help:      "Cumulative number of CRI-O image pull successes by resolved registry.",
+			},
+			[]string{"registry"},
+		),
+		metricImagePullsFailureByRegistryTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Subsystem: collectors.Subsystem,
+				Name:      collectors.ImagePullsFailureByRegistryTotal.String(),
+				Help:      "Cumulative number of CRI-O image pull failures by resolved registry and error.",
+			},
+			[]string{"registry", "error"},
 		),
 		metricImageLayerReuseTotal: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
@@ -393,7 +411,7 @@ func (m *Metrics) MetricImagePullsSkippedBytesAdd(add float64) {
 	c.Add(add)
 }
 
-func (m *Metrics) MetricImagePullsFailuresInc(image references.RegistryImageReference, label string) {
+func (m *Metrics) MetricImagePullsFailuresInc(image references.RegistryImageReference, label, resolvedRegistry string) {
 	c, err := m.metricImagePullsFailureTotal.GetMetricWithLabelValues(label)
 	if err != nil {
 		logrus.Warnf("Unable to write image pull failures total metric: %v", err)
@@ -402,6 +420,17 @@ func (m *Metrics) MetricImagePullsFailuresInc(image references.RegistryImageRefe
 	}
 
 	c.Inc()
+
+	if resolvedRegistry != "" {
+		rc, err := m.metricImagePullsFailureByRegistryTotal.GetMetricWithLabelValues(resolvedRegistry, label)
+		if err != nil {
+			logrus.Warnf("Unable to write image pull failure by registry metric: %v", err)
+
+			return
+		}
+
+		rc.Inc()
+	}
 }
 
 func (m *Metrics) MetricImageLayerReuseInc(layer string) {
@@ -415,8 +444,19 @@ func (m *Metrics) MetricImageLayerReuseInc(layer string) {
 	c.Inc()
 }
 
-func (m *Metrics) MetricImagePullsSuccessesInc(name references.RegistryImageReference) {
+func (m *Metrics) MetricImagePullsSuccessesInc(name references.RegistryImageReference, resolvedRegistry string) {
 	m.metricImagePullsSuccessTotal.Inc()
+
+	if resolvedRegistry != "" {
+		c, err := m.metricImagePullsSuccessByRegistryTotal.GetMetricWithLabelValues(resolvedRegistry)
+		if err != nil {
+			logrus.Warnf("Unable to write image pull success by registry metric: %v", err)
+
+			return
+		}
+
+		c.Inc()
+	}
 }
 
 func (m *Metrics) MetricImagePullsBytesAdd(add float64, mediatype string, size int64) {
@@ -465,6 +505,8 @@ func (m *Metrics) createEndpoint() (*http.ServeMux, error) {
 		collectors.ImagePullsLayerSize:                 m.metricImagePullsLayerSize,
 		collectors.ImagePullsSkippedBytesTotal:         m.metricImagePullsSkippedBytesTotal,
 		collectors.ImagePullsSuccessTotal:              m.metricImagePullsSuccessTotal,
+		collectors.ImagePullsSuccessByRegistryTotal:    m.metricImagePullsSuccessByRegistryTotal,
+		collectors.ImagePullsFailureByRegistryTotal:    m.metricImagePullsFailureByRegistryTotal,
 		collectors.OperationsErrorsTotal:               m.metricOperationsErrorsTotal,
 		collectors.OperationsLatencySeconds:            m.metricOperationsLatencySeconds,
 		collectors.OperationsLatencySecondsTotal:       m.metricOperationsLatencySecondsTotal,
